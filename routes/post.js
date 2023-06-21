@@ -4,17 +4,22 @@ const multer = require("multer");
 const fs = require("fs");
 const jwt = require("jsonwebtoken");
 const Post = require("../models/Post");
+const DataUriParser = require("datauri/parser.js");
+const cloudinary = require("cloudinary");
 
 const jwtSecret = process.env.JWT_SECRET;
 
-const uploadMiddleware = multer({ dest: "uploads/" });
+const storage = multer.memoryStorage();
 
-router.post("/create", uploadMiddleware.single("file"), (req, res) => {
-  const { originalname, path } = req.file;
+const uploadMiddleware = multer({ storage });
+
+router.post("/create", uploadMiddleware.single("file"), async (req, res) => {
+  const { originalname, path, buffer } = req.file;
   const parts = originalname.split(".");
-  const ext = parts[parts.length - 1];
-  const newPath = path + "." + ext;
-  fs.renameSync(path, newPath);
+  const ext = "." + parts[parts.length - 1];
+  const parser = new DataUriParser();
+  const fileUri = parser.format(ext, buffer);
+  const mycloud = await cloudinary.v2.uploader.upload(fileUri.content);
 
   const { token } = req.cookies;
   jwt.verify(token, jwtSecret, async (err, info) => {
@@ -24,22 +29,26 @@ router.post("/create", uploadMiddleware.single("file"), (req, res) => {
       title,
       summary,
       content,
-      image: newPath,
+      image: {
+        public_id: mycloud.public_id,
+        url: mycloud.secure_url,
+      },
       author: info.userId,
     });
-    console.log(info);
-    res.json({postDoc, message: "Blog Created Successfully"});
+    res.json({ postDoc, message: "Blog Created Successfully" });
+    // console.log(postDoc)
   });
 });
 
 router.put("/edit", uploadMiddleware.single("file"), async (req, res) => {
-  let newPath = null;
+  let mycloud = null;
   if (req.file) {
-    const { originalname, path } = req.file;
+    const { originalname, path, buffer } = req.file;
     const parts = originalname.split(".");
-    const ext = parts[parts.length - 1];
-    newPath = path + "." + ext;
-    fs.renameSync(path, newPath);
+    const ext = "." + parts[parts.length - 1];
+    const parser = new DataUriParser();
+    const fileUri = parser.format(ext, buffer);
+    mycloud = await cloudinary.v2.uploader.upload(fileUri.content);
   }
 
   const { token } = req.cookies;
@@ -51,16 +60,16 @@ router.put("/edit", uploadMiddleware.single("file"), async (req, res) => {
       JSON.stringify(postDoc.author) === JSON.stringify(info.userId);
     console.log(postDoc);
     if (!isAuthor) {
-      return res.status(400).json({message:"you are not the author"});
+      return res.status(400).json({ message: "you are not the author" });
     }
     const response = await postDoc.updateOne({
       title,
       summary,
       content,
-      image: newPath ? newPath : postDoc.cover,
+      image: mycloud ? {public_id: mycloud.public_id,url: mycloud.secure_url} : postDoc.image,
     });
 
-    res.json({postDoc,message: "Blog Updated Successfully"});
+    res.json({ postDoc, message: "Blog Updated Successfully" });
   });
 });
 
@@ -86,7 +95,7 @@ router.delete("/delete/:id", async (req, res) => {
     if (err) throw err;
     await Post.deleteOne({ _id: id });
 
-    res.json({message: "Blog Deleted Successfully"});
+    res.json({ message: "Blog Deleted Successfully" });
   });
 });
 
