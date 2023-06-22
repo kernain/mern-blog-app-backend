@@ -12,7 +12,7 @@ db.connection
 
 app.use(express.json())
 app.use(cookieParser())
-app.use(cors({origin: "https://mern-blog-app-frontend-omega.vercel.app", credentials: true}));
+app.use(cors({origin: "https://mern-blog-app-frontend-bice.vercel.app", credentials: true}));
 app.use('/uploads', express.static(__dirname + '/uploads'));
 
 cloudinary.config({ 
